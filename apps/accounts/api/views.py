@@ -322,6 +322,7 @@ def get_user_session(request):
             'nome': user.nome,
             'empresa': empresa,
             'is_admin_empresa': user.is_admin_empresa,
+            'is_staff': user.is_staff,
             'profile_picture': profile_picture_url
         })
     except User.DoesNotExist:
