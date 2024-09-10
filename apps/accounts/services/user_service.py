@@ -36,6 +36,12 @@ class UserService:
             raise ValidationError(str(e))
         
         return user
+    
+    def get_users_by_empresa(self, request):
+        empresa_id = request.user.empresa.id
+
+        users_empresa = self.repository.get_users_by_empresa(empresa_id)
+        return users_empresa
 
     @staticmethod
     def validate_fields(**kwargs):

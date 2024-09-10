@@ -5,7 +5,7 @@ from ..models import User
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'nome', 'empresa', 'date_joined']
+        fields = ['id', 'email', 'nome', 'empresa', 'date_joined', 'profile_picture']
 
 class CreateUserSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=100, required=False, default="Membro")

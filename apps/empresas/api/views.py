@@ -31,10 +31,13 @@ def empresas_list(request):
 
     serializer = EmpresaSerializer(paginated_queryset, many=True)
 
-    return pagination_class.get_paginated_response({
+    response = pagination_class.get_paginated_response({
         "total_empresas": total_empresas,
         "empresas": serializer.data
     })
+
+    response.status_code = status.HTTP_200_OK
+    return response
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsSoloAdmin])

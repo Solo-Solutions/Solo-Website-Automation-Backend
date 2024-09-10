@@ -14,6 +14,7 @@ from .views import (
     confirm_email_change,
     request_password_reset, 
     reset_password,
+    get_users_empresa,
 )
 
 urlpatterns = [
@@ -34,4 +35,6 @@ urlpatterns = [
 
     path('request-password-reset/', request_password_reset, name='request-password-reset'),
     path('reset-password/', reset_password, name='reset-password'),
+
+    path('get-users-empresa/', get_users_empresa, name='get-users-empresa')
 ]
