@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import make_password
 from rest_framework.response import Response
 from rest_framework import status, serializers
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 
@@ -78,6 +79,11 @@ class MyTokenObtainPairView(TokenObtainPairView):
         )
 
         return response
+
+class CustomPagePagination(PageNumberPagination):
+    page_size = 7
+    page_query_param = 'page'
+    max_page_size = 50
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -331,13 +337,14 @@ def get_user_session(request):
     try:
         profile_picture_url = user.profile_picture.url if user.profile_picture else None
         empresa = user.empresa.nome if user.empresa else None
+        is_solo_admin = user.groups.filter(name='solo_admin').exists()
         
         return Response({
             'email': user.email,
             'nome': user.nome,
             'empresa': empresa,
             'is_admin_empresa': user.is_admin_empresa,
-            'is_staff': user.is_staff,
+            'is_solo_admin': is_solo_admin,
             'profile_picture': profile_picture_url
         })
     except User.DoesNotExist:
