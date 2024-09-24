@@ -6,27 +6,6 @@ from rest_framework.exceptions import ValidationError
 from .models import User
 
 
-def generate_change_email_token(request):
-    user_id = request.user.id
-    email_atual = request.data.get('email_atual')
-    email_novo = request.data.get('email_novo')
-
-    if email_atual != request.user.email:
-        raise ValidationError('O e-mail atual informado não corresponde ao e-mail cadastrado.')
-
-    if User.objects.filter(email=email_novo).exclude(id=user_id).exists():
-        raise ValidationError('Este e-mail já está em uso.')
-
-    payload = {
-        'user_id': str(user_id), 
-        'email_atual': email_atual,
-        'email_novo': email_novo,
-        'exp': datetime.now(timezone.utc) + timedelta(hours=1),
-    }
-
-    token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
-    return token
-
 def generate_reset_password_token(email):
     user = User.objects.filter(email=email).first()
 

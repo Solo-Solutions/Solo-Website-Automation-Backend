@@ -1,27 +1,20 @@
-from datetime import datetime, timedelta, timezone
-
-from django.core.mail import send_mail
 from django.contrib.auth import authenticate
-from django.contrib.auth.hashers import make_password
 
 from rest_framework.response import Response
 from rest_framework import status, serializers
-from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError, NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from ..models import User
-from ..utils import generate_change_email_token, generate_reset_password_token, validate_jwt_token
-from .serializers import UserSerializer, CreateUserSerializer, UpdateUserNameSerializer, UpdateProfilePictureSerializer, DeleteProfilePictureSerializer
+from .serializers import UserSerializer, CreateUserSerializer, UpdateUserSerializer, ChangeEmailSerializer
 
 from core.permissions import IsAdminEmpresa
 from apps.accounts.services.user_service import UserService
+from apps.accounts.services.authentication_service import AuthenticationService
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -88,17 +81,12 @@ class CustomPagePagination(PageNumberPagination):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def refresh_access_token(request):
-    refresh_token = request.COOKIES.get('refresh_token')
-
-    if not refresh_token:
-        return Response({'detail': 'Refresh token não encontrado.'}, status=status.HTTP_401_UNAUTHORIZED)
+    service = AuthenticationService()
 
     try:
-        refresh = RefreshToken(refresh_token)
-        access = refresh.access_token
+        access = service.refresh_access_token(request)
 
         response = Response({'access_token': str(access)}, status=status.HTTP_200_OK)
-
         response.set_cookie(
             key='access_token',
             value=str(access),
@@ -106,137 +94,21 @@ def refresh_access_token(request):
             secure=True,
             samesite='None'
         )
+
         return response
-    except TokenError:
-        return Response({'detail': 'Token inválido.'}, status=status.HTTP_401_UNAUTHORIZED)
+    except ValidationError as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_401_UNAUTHORIZED)
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_user(request):
-    refresh_token = request.COOKIES.get('refresh_token')
+    service = AuthenticationService()
 
     try:
-        if refresh_token:
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-
-        response = Response({'detail': 'Logout successful.'}, status=status.HTTP_200_OK)
-
-        response.set_cookie(
-            key='access_token',
-            value='',
-            expires=datetime.now(timezone.utc) - timedelta(days=1),
-            httponly=True,
-            secure=True,
-            samesite='None'
-        )
-
-        response.set_cookie(
-            key='refresh_token',
-            value='',
-            expires=datetime.now(timezone.utc) - timedelta(days=1),
-            httponly=True,
-            secure=True,
-            samesite='None'
-        )
-
-        return response
-    except TokenError:
-        return Response({'detail': 'Token inválido.'}, status=status.HTTP_401_UNAUTHORIZED)
-    except Exception as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def request_email_change(request):
-    email_novo = request.data.get('email_novo')
-
-    try:
-        token = generate_change_email_token(request)
-
-        url_confirmacao = f'http://localhost:3000/confirm-email/?token={token}'
-        send_mail(
-            'Confirme sua mudança de e-mail',
-            f'Clique no link para confirmar a mudança de e-mail: {url_confirmacao}',
-            'no-reply@myapp.com',
-            [email_novo],
-            fail_silently=False,
-        )
-
-        return Response({'detail': 'E-mail de confirmação enviado com sucesso.'}, status=status.HTTP_200_OK)
+        service.logout(request)
+        return Response({'detail': 'Logout successful.'}, status=status.HTTP_200_OK)
     except ValidationError as e:
-        return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])  
-def confirm_email_change(request):
-    try:
-        token = validate_jwt_token(request)
-
-        user_id = token.get('user_id')
-        email_novo = token.get('email_novo')
-
-        user = User.objects.get(id=user_id)
-        user.email = email_novo
-
-        user.save()
-        return Response({'detail': 'E-mail atualizado com sucesso.'}, status=status.HTTP_200_OK)
-    except ValidationError as e:
-        return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
-    except User.DoesNotExist:
-        return Response({'detail': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
-def request_password_reset(request):
-    email = request.data.get('email')
-
-    try:
-        token = generate_reset_password_token(email)
-
-        reset_link = f"http://localhost:3000/reset-password?token={token}"
-        send_mail(
-            'Redefinição de Senha',
-            f'Clique no link para redefinir sua senha: {reset_link}',
-            'noreply@solosolutions.com.br',
-            [email],
-            fail_silently=False,
-        )
-
-        return Response({'detail': 'Link enviado.'}, status=status.HTTP_200_OK)
-    except ValidationError as e:
-        return Response({'detail': str(e.detail[0])}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
-def reset_password(request):
-    try:
-        token = validate_jwt_token(request)
-        user_id = token['user_id']
-
-        senha_nova = request.data.get('senha_nova')
-        confirm_senha_nova = request.data.get('confirm_senha_nova')
-
-        if not senha_nova or not confirm_senha_nova:
-            return Response({'detail': 'Todos os campos devem ser preenchidos corretamente.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if senha_nova != confirm_senha_nova:
-            return Response({'detail': 'A nova senha e a confirmação da nova senha não coincidem.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        user = User.objects.get(id=user_id)
-        user.password = make_password(senha_nova)
-
-        user.save()
-        return Response({'detail': 'Senha atualizada com sucesso.'}, status=status.HTTP_200_OK)
-    except ValidationError as e:
-        return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
-    except User.DoesNotExist:
-        return Response({'detail': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_401_UNAUTHORIZED)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdminEmpresa])
@@ -254,117 +126,149 @@ def create_user(request):
         except ValidationError as e:
             return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
         
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'detail': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
-def update_user_name(request):
-    user_id = request.user.id
+def update_user(request):
+    service = UserService()
 
     try:
-        user = User.objects.get(id=user_id)
-        serializer = UpdateUserNameSerializer(user, data=request.data, partial=True)
+        user = service.get_user(request)
+        serializer = UpdateUserSerializer(instance=user, data=request.data, partial=True)
 
         if serializer.is_valid():
-            serializer.save()
+            updated_user = service.update_user(user, **serializer.validated_data)
+            user_serializer = UserSerializer(updated_user, many=False)
 
-            return Response({'detail': 'Nome atualizado com sucesso.'}, status=status.HTTP_200_OK)
+            return Response({'user': user_serializer.data}, status=status.HTTP_200_OK)
         
         return Response({'detail': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-    except User.DoesNotExist:
-        return Response({'detail': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+    except NotFound as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_404_NOT_FOUND)
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def update_profile_picture(request):
-    user_id = request.user.id
+def request_email_change(request):
+    service = UserService()
 
     try:
-        user = User.objects.get(id=user_id)
-        serializer = UpdateProfilePictureSerializer(user, data=request.data, partial=True, context={'request': request})
+        user = service.get_user(request)
+        serializer = ChangeEmailSerializer(data=request.data)
 
         if serializer.is_valid():
-            serializer.save()
-
-            response_data = serializer.to_representation(user)
-            return Response({
-                'detail': 'Imagem de perfil atualizada com sucesso.',
-                'profile_picture_url': response_data['profile_picture_url']
-            }, status=status.HTTP_200_OK)
+            service.process_email_change(user, **serializer.validated_data)
+            return Response({'detail': 'E-mail de confirmação enviado com sucesso.'}, status=status.HTTP_200_OK)
         
         return Response({'detail': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-    except User.DoesNotExist:
-        return Response({'detail': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+    except NotFound as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_404_NOT_FOUND)
+    except ValidationError as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
-def delete_profile_picture(request):
-    user_id = request.user.id
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])  
+def confirm_email_change(request):
+    service = UserService()
 
     try:
-        user = User.objects.get(id=user_id)
-        serializer = DeleteProfilePictureSerializer(user, data={'profile_picture': None}, partial=True)
+        token = service.validate_token(request)
 
-        if serializer.is_valid():
-            serializer.save()
+        updated_user = service.confirm_email_change(token)
+        user_serializer = UserSerializer(updated_user, many=False)
 
-            return Response({'detail': 'Imagem de perfil removida com sucesso.'}, status=status.HTTP_200_OK)
-        
-        return Response({'detail': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-    except User.DoesNotExist:
-        return Response({'detail': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'user': user_serializer.data}, status=status.HTTP_200_OK)
+    except NotFound as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_404_NOT_FOUND)
+    except ValidationError as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def request_password_reset(request):
+    service = UserService()
+
+    try:
+        service.process_password_reset(request)
+        return Response({'detail': 'Email de redefinição de senha enviado com sucesso.'}, status=status.HTTP_200_OK)
+    except NotFound as e:
+        return Response({'detail': str(e.detail)}, status=status.HTTP_404_NOT_FOUND)
+    except ValidationError as e:
+        if isinstance(e.detail, dict):
+            error_detail = {'detail': e.detail}
+        else:
+            error_detail = {'detail': str(e.detail[0])}
+
+        return Response(error_detail, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def reset_password(request):
+    service = UserService()
+
+    try:
+        token = service.validate_token(request)
+        service.reset_password(request, token)
+
+        return Response({'detail': 'Senha atualizada com sucesso.'}, status=status.HTTP_200_OK)
+    except NotFound as e:
+        return Response({'detail': str(e.detail)}, status=status.HTTP_404_NOT_FOUND)
+    except ValidationError as e:
+        return Response({'detail': e.detail}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminEmpresa])
 def get_users_empresa(request):
-    service = UserService()
-    users_empresa = service.get_users_by_empresa(request)
+    try:
+        service = UserService()
+        users_empresa = service.get_users_empresa(request)
 
-    pagination_class = CustomPagePagination()
-    paginated_queryset = pagination_class.paginate_queryset(users_empresa, request)
+        pagination_class = CustomPagePagination()
+        paginated_queryset = pagination_class.paginate_queryset(users_empresa, request)
 
-    serializer = UserSerializer(paginated_queryset, many=True)
-    response = pagination_class.get_paginated_response({'users': serializer.data})
+        serializer = UserSerializer(paginated_queryset, many=True)
+        response = pagination_class.get_paginated_response({'users': serializer.data})
 
-    response.status_code = status.HTTP_200_OK
-    return response
+        response.status_code = status.HTTP_200_OK
+        return response
+    except NotFound as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_404_NOT_FOUND)
+    except ValidationError as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_session(request):
-    user = request.user
+    service = UserService()
 
     try:
-        profile_picture_url = user.profile_picture.url if user.profile_picture else None
-        empresa = user.empresa.nome if user.empresa else None
-        is_solo_admin = user.groups.filter(name='solo_admin').exists()
-        
-        return Response({
-            'email': user.email,
-            'nome': user.nome,
-            'empresa': empresa,
-            'is_admin_empresa': user.is_admin_empresa,
-            'is_solo_admin': is_solo_admin,
-            'profile_picture': profile_picture_url
-        })
-    except User.DoesNotExist:
-        return Response({'detail': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        user = service.get_user(request)
+        user_session = service.get_session(user)
+
+        return Response({'user': user_session}, status=status.HTTP_200_OK)
+    except NotFound as e:
+        return Response({'detail': str(e.detail[0])}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
+@authentication_classes([])
 @permission_classes([AllowAny])
-def get_routes(request):
+def api_overview(request):
     routes = [
+        '/api/accounts/'
         '/api/accounts/token/',
-        '/api/accounts/token/logout/',
         '/api/accounts/token/refresh/',
-        '/api/accounts/reset-password/',
-        '/api/accounts/update-user-name/',
-        '/api/accounts/update-profile-picture/',
-        '/api/accounts/delete-profile-picture/',
-        '/api/accounts/token/get-user-session',
-        '/api/accounts/update-user-name/',
+        '/api/token/logout/',
+        '/api/accounts/token/get-user-session/',
+        '/api/accounts/create-user/',
+        '/api/accounts/update-user/',
+        '/api/accounts/request-email-change/',
+        '/api/accounts/confirm-email-change/',
         '/api/accounts/request-password-reset/',
-        '/api/accounts/reset-password/',
+        '/api/accounts/reset-password',
+        '/api/accounts/get-users-empresa',
     ]
 
     return Response(routes)

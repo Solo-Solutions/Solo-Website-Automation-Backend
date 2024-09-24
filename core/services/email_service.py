@@ -1,13 +1,24 @@
+from django.conf import settings
 from django.core.mail import send_mail
+
 from rest_framework.exceptions import ValidationError
 
 
 class EmailService:
     def send_reset_password_email(self, token, email):
-        reset_link = f'http://localhost:3000/reset-password?token={token}'
+        reset_link = f'{settings.FRONTEND_URL}/reset-password?token={token}'
 
         subject = 'Redefinição de Senha'
         message = f'Clique no link para redefinir sua senha: {reset_link}'
+        recipient_list = [email]
+
+        self.send_email(subject, message, recipient_list)
+
+    def send_request_email_change(self, token, email):
+        reset_link = f'{settings.FRONTEND_URL}/confirm-email/?token={token}'
+
+        subject = 'Confirme sua mudança de e-mail'
+        message = f'Clique no link para confirmar a mudança de e-mail: {reset_link}'
         recipient_list = [email]
 
         self.send_email(subject, message, recipient_list)
