@@ -4,17 +4,22 @@ from datetime import datetime, timedelta, timezone
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 
+from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework.exceptions import ValidationError, NotFound
-from core.services.email_service import EmailService
+
+from apps.core.services.email_service import EmailService
+from apps.empresas.services.empresa_service import EmpresaService
 
 from apps.accounts.models import User
-from apps.empresas.services.empresa_service import EmpresaService
 from apps.accounts.repositories.user_repository import UserRepository
+from apps.accounts.services.auth_service import AuthenticationService
 
 
 class UserService:
     def __init__(self):
         self.repository = UserRepository()
+
+        self.auth_service = AuthenticationService()
 
         self.email_service = EmailService()
         self.empresa_service = EmpresaService()
@@ -59,6 +64,7 @@ class UserService:
 
     def create_user(self, request, **validated_data):
         empresa = request.user.empresa
+        group = self.repository.get_group('solo_admin') if not empresa else None
         password_temp = self.repository.generate_password_temp()
 
         validated_data['empresa'] = empresa
@@ -67,14 +73,20 @@ class UserService:
         if self.repository.validate_email(validated_data['email']):
             raise ValidationError('Este e-mail já está em uso.')
         
-        user = self.repository.create(**validated_data)
-        token = self.generate_password_reset_token(user)
+        user = self.repository.create(group, **validated_data)
 
-        self.email_service.send_reset_password_email(token, user.email)
+        access_token = AccessToken.for_user(user)
+        access_token.set_exp(lifetime=timedelta(hours=1))
+
+        self.email_service.send_reset_password_email(access_token, user.email)
         return user
 
     def update_user(self, user, **validated_data):
         return self.repository.update(user, **validated_data)
+
+    def delete_user(self, user_id):
+        user = self.get_user(user_id=user_id)
+        self.repository.delete(user)
 
     def process_email_change(self, user, **validated_data):
         email_atual = validated_data['email_atual']
@@ -87,25 +99,26 @@ class UserService:
             raise ValidationError('Este e-mail já está em uso.')
         
         try:
-            payload = {
-                'user_id': str(user.id),
-                'email_atual': email_atual,
-                'email_novo': email_novo,
-                'exp': datetime.now(timezone.utc) + timedelta(hours=1),
-            }
+            access_token = AccessToken.for_user(user)
+            access_token['email_novo'] = email_novo
 
-            token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
-            self.email_service.send_request_email_change(token, email_novo)
+            access_token.set_exp(lifetime=timedelta(hours=1))
+            self.email_service.send_request_email_change(access_token, email_novo)
         except Exception as e:
             raise ValidationError(str(e))
     
-    def confirm_email_change(self, token):
+    def confirm_email_change(self, request):
+        token = self.auth_service.validate_access_token(request)
+
         user_id = token.get('user_id')
         email_novo = token.get('email_novo')
 
+        if not email_novo:
+            raise ValidationError('Toke inválido.')
+
         user = self.get_user(user_id=user_id)
         return self.repository.update(user, email=email_novo)
-
+    
     def process_password_reset(self, request):
         email = request.data.get('email')
 
@@ -114,15 +127,25 @@ class UserService:
         
         try:
             user = self.repository.get_user_by_email(email)
-            token = self.generate_password_reset_token(user)
 
-            self.email_service.send_reset_password_email(token, email)
+            access_token = AccessToken.for_user(user)
+            access_token.set_exp(lifetime=timedelta(hours=1))
+
+            self.email_service.send_reset_password_email(access_token, email)
         except User.DoesNotExist:
             raise NotFound('Usuário não encontrado.')
+        except Exception as e:
+            raise ValidationError(str(e))
     
-    def reset_password(self, request, token):
+    def reset_password(self, request):
+        token = self.auth_service.validate_access_token(request)
+
         user_id = token.get('user_id')
+        email = token.get('email')
         senha_nova = request.data.get('senha_nova')
+
+        if email:
+            raise ValidationError('Token inválido.')
 
         if not senha_nova:
             raise ValidationError({'senha_nova': ["Este campo é obrigatório."]})
@@ -131,27 +154,3 @@ class UserService:
         user.password = make_password(senha_nova)
 
         user.save()
-
-    def generate_password_reset_token(self, user):
-        try:
-            payload = {
-                'user_id': str(user.id),
-                'email': user.email,
-                'exp': datetime.now(timezone.utc) + timedelta(hours=1),
-            }
-            return jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
-        except Exception as e:
-            raise ValidationError(str(e))
-
-    def validate_token(self, request):
-        token = request.data.get('token')
-
-        if not token:
-            raise ValidationError('Token não encontrado.')
-        
-        try:
-            return jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
-        except jwt.ExpiredSignatureError:
-            raise ValidationError('O token expirou.')
-        except jwt.InvalidTokenError:
-            raise ValidationError('Token inválido.')

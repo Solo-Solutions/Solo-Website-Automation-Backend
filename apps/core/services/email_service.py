@@ -1,8 +1,6 @@
 from django.conf import settings
 from django.core.mail import send_mail
 
-from rest_framework.exceptions import ValidationError
-
 
 class EmailService:
     def send_reset_password_email(self, token, email):

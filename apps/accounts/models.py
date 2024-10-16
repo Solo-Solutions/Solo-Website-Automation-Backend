@@ -40,11 +40,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
-    class Meta:
-        permissions = [
-            ('can_create_solo_admin_user', 'Can create user solo admin')
-        ]
-
     def clean(self):
         super().clean()
 

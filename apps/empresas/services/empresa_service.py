@@ -5,13 +5,21 @@ from apps.empresas.repositories.empresa_repository import EmpresaRepository
 class EmpresaService:
     def __init__(self):
         self.repository = EmpresaRepository()
-    
+
     def get_empresa(self, empresa_id):
         empresa = self.repository.get_by_id(empresa_id)
 
         if not empresa:
             raise NotFound('Empresa não encontrada.')
         return empresa
+
+    def get_list_empresas(self):
+        empresas = self.repository.get_empresas()
+
+        if not empresas:
+            raise NotFound('Nenhuma empresa cadastrada.')
+        
+        return empresas
 
     def update_empresa(self, empresa, **kwargs):
         self.validate_fields(empresa.id, **kwargs)

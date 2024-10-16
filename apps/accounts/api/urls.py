@@ -11,7 +11,6 @@ urlpatterns = [
     
     path('token/refresh/', views.refresh_access_token, name='token_refresh'),
     path('token/logout/', views.logout_user, name='logout_user'),
-    path('token/get-user-session/', views.get_user_session, name='get_user_session'),
     
     path('create-user/', views.create_user, name='create_user'),
     path('update-user/', views.update_user, name='update_user'),
@@ -22,5 +21,7 @@ urlpatterns = [
     path('request-password-reset/', views.request_password_reset, name='request-password-reset'),
     path('reset-password/', views.reset_password, name='reset-password'),
 
+    path('get-user/<uuid:id>/', views.get_user, name='get_user'),
+    path('get-user-session/', views.get_user_session, name='get_user_session'),
     path('get-users-empresa/', views.get_users_empresa, name='get-users-empresa')
 ]

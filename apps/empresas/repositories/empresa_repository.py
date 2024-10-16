@@ -1,4 +1,4 @@
-from ..models import Empresa
+from apps.empresas.models import Empresa
 from rest_framework.exceptions import ValidationError
 
 
@@ -9,6 +9,9 @@ class EmpresaRepository:
         except Empresa.DoesNotExist:
             return None
     
+    def get_empresas(self):
+        return Empresa.objects.all().order_by('-created_at')
+
     def validate_nome(self, empresa_id, nome):
         return Empresa.objects.exclude(id=empresa_id).filter(nome=nome).exists()
     

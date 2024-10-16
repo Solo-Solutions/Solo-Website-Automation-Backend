@@ -28,9 +28,5 @@ class Empresa(models.Model):
         validar_cnpj(self.cnpj)
         super().save(*args, **kwargs)
     
-    @classmethod
-    def total_empresas(cls):
-        return cls.objects.count()
-
     def __str__(self):
         return self.nome

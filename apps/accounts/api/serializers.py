@@ -10,7 +10,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'nome', 'empresa', 'date_joined', 'profile_picture']
 
 class CreateUserSerializer(serializers.Serializer):
-    nome = serializers.CharField(max_length=100, required=False, default="Membro")
+    nome = serializers.CharField(max_length=100, required=False)
     email = serializers.EmailField(required=True)
 
     def to_internal_value(self, data):

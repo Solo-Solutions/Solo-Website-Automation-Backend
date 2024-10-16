@@ -1,4 +1,5 @@
 from ..models import User
+from django.contrib.auth.models import Group
 
 
 class UserRepository:
@@ -11,8 +12,17 @@ class UserRepository:
     def get_users_by_empresa(self, empresa_id):
         return User.objects.filter(empresa_id=empresa_id).order_by('-date_joined')
     
-    def create(self, **validated_data):
-        return User.objects.create_user(**validated_data)
+    def get_group(self, group_name):
+        return Group.objects.get(name=group_name)
+
+    def create(self, group=None, **validated_data):
+        user = User.objects.create_user(**validated_data)
+
+        if group:
+            user.groups.add(group)
+            user.save()
+            
+        return user
     
     def update(self, user, **validated_data):
         if 'profile_picture' in validated_data:
@@ -25,6 +35,9 @@ class UserRepository:
         
         user.save()
         return user
+
+    def delete(self, user):
+        user.delete()
 
     def validate_email(self, email):
         return User.objects.filter(email=email).exists()

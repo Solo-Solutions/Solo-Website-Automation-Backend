@@ -5,13 +5,13 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError, NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 
 from ..models import Empresa
 from apps.accounts.utils import generate_reset_password_token
 from apps.empresas.services.empresa_service import EmpresaService
 
-from core.permissions import IsSoloAdmin
+from apps.core.permissions import IsSoloAdmin
 from .serializers import EmpresaSerializer, EmpresaCreateSerializer, EmpresaUpdateSerializer
 
 
@@ -22,22 +22,24 @@ class CustomPagePagination(PageNumberPagination):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsSoloAdmin])
-def empresas_list(request):
-    empresas = Empresa.objects.all().order_by('-created_at')
-    total_empresas = Empresa.total_empresas()
-
+def get_list_empresas(request):
+    service = EmpresaService()
     pagination_class = CustomPagePagination()
-    paginated_queryset = pagination_class.paginate_queryset(empresas, request)
 
-    serializer = EmpresaSerializer(paginated_queryset, many=True)
+    try:
+        empresas = service.get_list_empresas()
 
-    response = pagination_class.get_paginated_response({
-        "total_empresas": total_empresas,
-        "empresas": serializer.data
-    })
+        paginated_queryset = pagination_class.paginate_queryset(empresas, request)
+        serializer = EmpresaSerializer(paginated_queryset, many=True)
 
-    response.status_code = status.HTTP_200_OK
-    return response
+        response = pagination_class.get_paginated_response({
+            "empresas": serializer.data
+        })
+
+        response.status_code = status.HTTP_200_OK
+        return response
+    except NotFound as e:
+        return Response({'detail': str(e.detail)}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsSoloAdmin])
@@ -98,13 +100,15 @@ def delete_empresa_by_name(request):
     return Response({'detail': 'Nome não fornecido'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
+@authentication_classes([])
 @permission_classes([AllowAny])
-def get_routes(request):
+def api_overview(request):
     api_urls = [
-        'api/empresas/',
-        'api/empresas/list-empresas/',
-        'api/empresas/create-empresa',
-        'api/empresas/delete-by-name/'
+        '/api/empresas/',
+
+        '/api/empresas/list-empresas/',
+        '/api/empresas/create-empresa',
+        '/api/empresas/delete-by-name/'
     ]
 
     return Response(api_urls)
